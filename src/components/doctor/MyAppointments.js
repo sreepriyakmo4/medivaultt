@@ -44,17 +44,33 @@ function MyAppointments({ doctorInfo }) {
     setSnackbar({ open: true, message, severity });
   };
 
-  const updateAppointmentStatus = async (appointmentId, status) => {
+  const updateAppointmentStatus = async (appointmentId, status, patientId) => {
     try {
-      const { error } = await supabase
+      // Update appointment status
+      const { error: appointmentError } = await supabase
         .from('appointments')
         .update({ status })
         .eq('id', appointmentId);
 
-      if (error) throw error;
+      if (appointmentError) throw appointmentError;
+
+      // If confirming appointment, assign patient to this doctor
+      if (status === 'confirmed' && patientId) {
+        const { error: patientError } = await supabase
+          .from('patients')
+          .update({ assigned_doctor_id: doctorInfo.id })
+          .eq('id', patientId);
+
+        if (patientError) {
+          console.error('Error assigning patient:', patientError);
+          // Don't throw error, just log it
+        } else {
+          console.log('Patient assigned to doctor successfully');
+        }
+      }
 
       fetchAppointments();
-      showSnackbar(`Appointment marked as ${status}`);
+      showSnackbar(`Appointment ${status}${status === 'confirmed' ? ' and patient assigned' : ''}`);
     } catch (error) {
       showSnackbar('Error: ' + error.message, 'error');
     }
@@ -142,7 +158,7 @@ function MyAppointments({ doctorInfo }) {
                     variant="outlined"
                     size="small"
                     startIcon={<CheckCircle />}
-                    onClick={() => updateAppointmentStatus(appointment.id, 'confirmed')}
+                    onClick={() => updateAppointmentStatus(appointment.id, 'confirmed', appointment.patient_id)}
                     disabled={appointment.status === 'confirmed' || appointment.status === 'completed'}
                     sx={{ flex: 1 }}
                   >
@@ -152,7 +168,7 @@ function MyAppointments({ doctorInfo }) {
                     variant="contained"
                     size="small"
                     startIcon={<CheckCircle />}
-                    onClick={() => updateAppointmentStatus(appointment.id, 'completed')}
+                    onClick={() => updateAppointmentStatus(appointment.id, 'completed', appointment.patient_id)}
                     disabled={appointment.status === 'completed'}
                     sx={{
                       flex: 1,
@@ -166,7 +182,7 @@ function MyAppointments({ doctorInfo }) {
                     size="small"
                     color="error"
                     startIcon={<Cancel />}
-                    onClick={() => updateAppointmentStatus(appointment.id, 'cancelled')}
+                    onClick={() => updateAppointmentStatus(appointment.id, 'cancelled', appointment.patient_id)}
                     disabled={appointment.status === 'cancelled'}
                     sx={{ flex: 1 }}
                   >

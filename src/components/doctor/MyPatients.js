@@ -19,8 +19,8 @@ import {
   MenuItem,
   Snackbar,
   Alert,
-  Chip,
-  Avatar
+  Avatar,
+  CircularProgress
 } from '@mui/material';
 import {
   MedicalServices,
@@ -35,6 +35,7 @@ import { supabase } from '../../utils/supabase';
 
 function MyPatients({ doctorInfo }) {
   const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [openPrescriptionDialog, setOpenPrescriptionDialog] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -54,11 +55,23 @@ function MyPatients({ doctorInfo }) {
   }, [doctorInfo]);
 
   const fetchPatients = async () => {
-    const { data, error } = await supabase
-      .from('patients')
-      .select(`*, user:users(name)`)
-      .eq('assigned_doctor_id', doctorInfo.id);
-    if (!error) setPatients(data || []);
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('patients')
+        .select(`*, user:users(name)`)
+        .eq('assigned_doctor_id', doctorInfo.id);
+      
+      if (error) {
+        showSnackbar('Error loading patients: ' + error.message, 'error');
+      } else {
+        setPatients(data || []);
+      }
+    } catch (err) {
+      showSnackbar('Unexpected error loading patients', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const showSnackbar = (message, severity = 'success') => {
@@ -105,6 +118,16 @@ function MyPatients({ doctorInfo }) {
       default: return <Transgender sx={{ color: '#9c27b0' }} />;
     }
   };
+
+  if (loading) {
+    return (
+      <Container maxWidth="xl">
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+          <CircularProgress />
+        </Box>
+      </Container>
+    );
+  }
 
   return (
     <Container maxWidth="xl">
@@ -203,12 +226,16 @@ function MyPatients({ doctorInfo }) {
             </Card>
           </Grid>
         ))}
+        
         {patients.length === 0 && (
           <Grid item xs={12}>
             <Box sx={{ textAlign: 'center', py: 8 }}>
               <Person sx={{ fontSize: 80, color: '#e0e0e0', mb: 2 }} />
-              <Typography variant="h6" color="text.secondary">
+              <Typography variant="h6" color="text.secondary" gutterBottom>
                 No patients assigned yet
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Confirm appointments to assign patients to you
               </Typography>
             </Box>
           </Grid>
