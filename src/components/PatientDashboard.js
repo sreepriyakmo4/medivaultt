@@ -1,86 +1,58 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Box,
+  Drawer,
   AppBar,
   Toolbar,
-  Typography,
-  Button,
-  Container,
-  Box,
-  Grid,
-  Card,
-  CardContent,
-  CardHeader,
-  TextField,
-  Chip,
-  Divider,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Alert,
-  Snackbar,
-  Paper,
   List,
+  Typography,
+  Divider,
   ListItem,
-  ListItemText,
+  ListItemButton,
   ListItemIcon,
-  Avatar
+  ListItemText,
+  IconButton,
+  Avatar,
+  Paper,
+  Chip,
+  Button
 } from '@mui/material';
 import {
+  Dashboard,
+  Receipt,
+  Assessment,
+  Menu as MenuIcon,
+  ChevronLeft,
   Logout,
   Person,
-  MedicalServices,
-  CalendarToday,
-  AttachMoney,
-  LocalHospital,
-  Receipt,
-  EventAvailable,
-  Schedule,
-  HealthAndSafety,
-  Bloodtype,
   Cake,
+  Bloodtype,
   Male,
   Female,
-  Transgender,
-  CheckCircle,
-  Pending,
-  Cancel
+  Transgender
 } from '@mui/icons-material';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../context/AuthContext';
 
-function PatientDashboard() {
-  const [prescriptions, setPrescriptions] = useState([]);
-  const [appointments, setAppointments] = useState([]);
-  const [patientInfo, setPatientInfo] = useState(null);
-  const [doctors, setDoctors] = useState([]);
-  const [openAppointmentDialog, setOpenAppointmentDialog] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  
-  const [newAppointment, setNewAppointment] = useState({
-    doctor_id: '',
-    appointment_date: '',
-    appointment_time: '',
-    symptoms: ''
-  });
+// Import child components
+import DashboardHome from './patient/DashboardHome';
+import ExpensesPage from './patient/ExpensesPage';
+import ReportsPage from './patient/ReportsPage';
+import Logo from './Logo'; // Import the Logo component
 
+const drawerWidth = 280;
+
+function PatientDashboard() {
+  const [open, setOpen] = useState(true);
+  const [patientInfo, setPatientInfo] = useState(null);
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     fetchPatientData();
-    fetchDoctors();
   }, [user]);
-
-  useEffect(() => {
-    if (patientInfo?.id) {
-      fetchPrescriptions();
-      fetchAppointments();
-    }
-  }, [patientInfo]);
 
   const fetchPatientData = async () => {
     const { data, error } = await supabase
@@ -91,551 +63,263 @@ function PatientDashboard() {
     if (!error) setPatientInfo(data);
   };
 
-  const fetchDoctors = async () => {
-    const { data, error } = await supabase
-      .from('doctors')
-      .select(`
-        *,
-        user:users(name)
-      `);
-    if (!error) setDoctors(data || []);
+  const handleDrawerToggle = () => {
+    setOpen(!open);
   };
 
-  const fetchPrescriptions = async () => {
-    const { data, error } = await supabase
-      .from('prescriptions')
-      .select(`
-        *,
-        doctor:doctors(
-          user:users(name)
-        )
-      `)
-      .eq('patient_id', patientInfo.id)
-      .order('created_at', { ascending: false });
-    if (!error) setPrescriptions(data || []);
-  };
-
-  const fetchAppointments = async () => {
-    const { data, error } = await supabase
-      .from('appointments')
-      .select(`
-        *,
-        doctor:doctors(
-          user:users(name),
-          consultation_fee,
-          specialization
-        )
-      `)
-      .eq('patient_id', patientInfo.id)
-      .order('appointment_date', { ascending: true });
-    if (!error) setAppointments(data || []);
-  };
-
-  const showSnackbar = (message, severity = 'success') => {
-    setSnackbar({ open: true, message, severity });
-  };
-
-  const scheduleAppointment = async (e) => {
-    e.preventDefault();
-    try {
-      if (!patientInfo?.id) {
-        throw new Error('Patient information not found');
-      }
-
-      // Get selected doctor's consultation fee
-      const selectedDoctor = doctors.find(d => d.id == newAppointment.doctor_id);
-      if (!selectedDoctor) {
-        throw new Error('Selected doctor not found');
-      }
-
-      const { error } = await supabase
-        .from('appointments')
-        .insert([{
-          doctor_id: newAppointment.doctor_id,
-          patient_id: patientInfo.id,
-          appointment_date: newAppointment.appointment_date,
-          appointment_time: newAppointment.appointment_time,
-          symptoms: newAppointment.symptoms,
-          consultation_fee: selectedDoctor.consultation_fee,
-          status: 'pending'
-        }]);
-
-      if (error) throw error;
-
-      setOpenAppointmentDialog(false);
-      setNewAppointment({
-        doctor_id: '',
-        appointment_date: '',
-        appointment_time: '',
-        symptoms: ''
-      });
-      fetchAppointments();
-      showSnackbar('Appointment requested successfully! The doctor will confirm your appointment.');
-    } catch (error) {
-      showSnackbar('Error scheduling appointment: ' + error.message, 'error');
-    }
-  };
-
-  const calculateMedicineCost = () => {
-    return prescriptions.reduce((total, prescription) => {
-      return total + (prescription.days * prescription.cost_per_day);
-    }, 0);
-  };
-
-  const calculateConsultationCost = () => {
-    return appointments
-      .filter(apt => apt.status === 'completed')
-      .reduce((total, appointment) => {
-        return total + (appointment.consultation_fee || 0);
-      }, 0);
-  };
-
-  const calculateTotalExpense = () => {
-    return calculateMedicineCost() + calculateConsultationCost();
-  };
-
-  const getAppointmentStatusColor = (status) => {
-    switch (status) {
-      case 'pending': return 'warning';
-      case 'confirmed': return 'info';
-      case 'completed': return 'success';
-      case 'cancelled': return 'error';
-      default: return 'default';
-    }
-  };
-
-  const getAppointmentStatusIcon = (status) => {
-    switch (status) {
-      case 'pending': return <Pending />;
-      case 'confirmed': return <CheckCircle />;
-      case 'completed': return <CheckCircle />;
-      case 'cancelled': return <Cancel />;
-      default: return <Pending />;
-    }
-  };
+  const menuItems = [
+    { text: 'Dashboard', icon: <Dashboard />, path: '/patient' },
+    { text: 'Expenses', icon: <Receipt />, path: '/patient/expenses' },
+    { text: 'Reports', icon: <Assessment />, path: '/patient/reports' }
+  ];
 
   const getGenderIcon = (gender) => {
     switch (gender?.toLowerCase()) {
-      case 'male': return <Male />;
-      case 'female': return <Female />;
-      default: return <Transgender />;
+      case 'male': return <Male sx={{ color: '#1976d2' }} />;
+      case 'female': return <Female sx={{ color: '#e91e63' }} />;
+      default: return <Transgender sx={{ color: '#9c27b0' }} />;
     }
   };
 
-  // Fixed: Safely handle patient ID display
   const displayPatientId = () => {
     if (!patientInfo?.id) return 'N/A';
-    
-    // Convert to string and take first 8 characters
     const idString = String(patientInfo.id);
     return idString.length > 8 ? `${idString.substring(0, 8)}...` : idString;
   };
 
   return (
-    <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'grey.50' }}>
-      <AppBar position="static" elevation={2}>
+    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      {/* App Bar */}
+      <AppBar
+        position="fixed"
+        sx={{
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          background: 'linear-gradient(135deg, #1e5dbc 0%, #2196f3 100%)',
+          boxShadow: '0 4px 20px rgba(30, 93, 188, 0.3)'
+        }}
+      >
         <Toolbar>
-          <LocalHospital sx={{ mr: 2 }} />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Patient Dashboard
-          </Typography>
-          <Typography variant="body2" sx={{ mr: 2, opacity: 0.8 }}>
+          <IconButton
+            color="inherit"
+            edge="start"
+            onClick={handleDrawerToggle}
+            sx={{ mr: 2 }}
+          >
+            {open ? <ChevronLeft /> : <MenuIcon />}
+          </IconButton>
+          
+          {/* Logo and Title */}
+          <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+            <Logo size={45} />
+            <Box sx={{ ml: 1.5 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                MediVault
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.9, fontSize: '0.7rem' }}>
+                Medical Records
+              </Typography>
+            </Box>
+          </Box>
+
+          <Typography variant="body2" sx={{ mr: 2, opacity: 0.9 }}>
             Welcome, {user?.name}
           </Typography>
-          <Button 
-            color="inherit" 
+
+          <Button
+            color="inherit"
             onClick={logout}
             startIcon={<Logout />}
+            sx={{
+              bgcolor: 'rgba(255, 255, 255, 0.15)',
+              '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.25)' },
+              borderRadius: 2,
+              px: 2
+            }}
           >
             Logout
           </Button>
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Grid container spacing={3}>
-          {/* Patient Information & Actions */}
-          <Grid item xs={12} md={4}>
-            {/* Patient Profile Card */}
-            <Card elevation={3} sx={{ mb: 3 }}>
-              <CardContent sx={{ textAlign: 'center', py: 4 }}>
-                <Avatar
-                  sx={{
-                    width: 80,
-                    height: 80,
-                    mx: 'auto',
-                    mb: 2,
-                    bgcolor: 'primary.main',
-                    fontSize: '2rem'
+      {/* Sidebar Drawer */}
+      <Drawer
+        variant="persistent"
+        open={open}
+        sx={{
+          width: drawerWidth,
+          flexShrink: 0,
+          '& .MuiDrawer-paper': {
+            width: drawerWidth,
+            boxSizing: 'border-box',
+            background: 'linear-gradient(180deg, #1a1f3a 0%, #0d1526 100%)',
+            color: 'white',
+            borderRight: 'none'
+          }
+        }}
+      >
+        <Toolbar />
+        
+        {/* Patient Profile Section in Sidebar */}
+        <Box sx={{ p: 3, mt: 2 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              background: 'linear-gradient(135deg, rgba(33, 150, 243, 0.2) 0%, rgba(30, 93, 188, 0.1) 100%)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 3,
+              textAlign: 'center'
+            }}
+          >
+            <Avatar
+              sx={{
+                width: 80,
+                height: 80,
+                mx: 'auto',
+                mb: 2,
+                bgcolor: '#2196f3',
+                fontSize: '2rem',
+                fontWeight: 'bold',
+                border: '3px solid rgba(255, 255, 255, 0.2)'
+              }}
+            >
+              {user?.name?.charAt(0).toUpperCase()}
+            </Avatar>
+            
+            <Typography variant="h6" gutterBottom fontWeight="bold" sx={{ color: 'white' }}>
+              {user?.name}
+            </Typography>
+            
+            <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 2 }}>
+              Patient ID: {displayPatientId()}
+            </Typography>
+
+            <Divider sx={{ bgcolor: 'rgba(255,255,255,0.1)', my: 2 }} />
+
+            {/* Patient Details List */}
+            <List dense sx={{ textAlign: 'left' }}>
+              <ListItem sx={{ px: 0, py: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <Cake sx={{ color: '#2196f3', fontSize: 20 }} />
+                </ListItemIcon>
+                <ListItemText 
+                  primary={
+                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                      Age
+                    </Typography>
+                  }
+                  secondary={
+                    <Typography variant="body2" sx={{ color: 'white', fontWeight: 500 }}>
+                      {patientInfo?.age || 'Not specified'}
+                    </Typography>
+                  }
+                />
+              </ListItem>
+
+              <ListItem sx={{ px: 0, py: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  {getGenderIcon(patientInfo?.gender)}
+                </ListItemIcon>
+                <ListItemText 
+                  primary={
+                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                      Gender
+                    </Typography>
+                  }
+                  secondary={
+                    <Typography variant="body2" sx={{ color: 'white', fontWeight: 500 }}>
+                      {patientInfo?.gender || 'Not specified'}
+                    </Typography>
+                  }
+                />
+              </ListItem>
+
+              <ListItem sx={{ px: 0, py: 0.5 }}>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <Bloodtype sx={{ color: '#f44336', fontSize: 20 }} />
+                </ListItemIcon>
+                <ListItemText 
+                  primary={
+                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                      Blood Group
+                    </Typography>
+                  }
+                  secondary={
+                    <Typography variant="body2" sx={{ color: 'white', fontWeight: 500 }}>
+                      {patientInfo?.blood_group || 'Not specified'}
+                    </Typography>
+                  }
+                />
+              </ListItem>
+            </List>
+          </Paper>
+        </Box>
+
+        <Divider sx={{ bgcolor: 'rgba(255,255,255,0.1)', mx: 2 }} />
+
+        {/* Navigation Menu */}
+        <List sx={{ px: 2, mt: 2 }}>
+          {menuItems.map((item) => (
+            <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
+              <ListItemButton
+                selected={location.pathname === item.path}
+                onClick={() => navigate(item.path)}
+                sx={{
+                  borderRadius: 2,
+                  py: 1.5,
+                  '&.Mui-selected': {
+                    background: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)',
+                    boxShadow: '0 4px 12px rgba(33, 150, 243, 0.4)',
+                    '&:hover': { 
+                      background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)'
+                    }
+                  },
+                  '&:hover': {
+                    bgcolor: 'rgba(33, 150, 243, 0.1)'
+                  }
+                }}
+              >
+                <ListItemIcon sx={{ color: 'inherit', minWidth: 40 }}>
+                  {item.icon}
+                </ListItemIcon>
+                <ListItemText
+                  primary={item.text}
+                  primaryTypographyProps={{
+                    fontWeight: location.pathname === item.path ? 600 : 400,
+                    fontSize: '0.95rem'
                   }}
-                >
-                  {user?.name?.charAt(0).toUpperCase()}
-                </Avatar>
-                <Typography variant="h5" gutterBottom fontWeight="bold">
-                  {user?.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                  Patient ID: {displayPatientId()}
-                </Typography>
+                />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
+      </Drawer>
 
-                <List dense sx={{ textAlign: 'left' }}>
-                  <ListItem>
-                    <ListItemIcon>
-                      <Cake color="primary" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="Age" 
-                      secondary={patientInfo?.age || 'Not specified'} 
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemIcon>
-                      {getGenderIcon(patientInfo?.gender)}
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="Gender" 
-                      secondary={patientInfo?.gender || 'Not specified'} 
-                    />
-                  </ListItem>
-                  <ListItem>
-                    <ListItemIcon>
-                      <Bloodtype color="error" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="Blood Group" 
-                      secondary={patientInfo?.blood_group || 'Not specified'} 
-                    />
-                  </ListItem>
-                </List>
-
-                <Button
-                  variant="contained"
-                  size="large"
-                  startIcon={<EventAvailable />}
-                  onClick={() => setOpenAppointmentDialog(true)}
-                  sx={{ mt: 2, width: '100%' }}
-                >
-                  Book New Appointment
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Expense Summary */}
-            <Card elevation={3}>
-              <CardHeader
-                title={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Receipt sx={{ mr: 1 }} />
-                    Expense Summary
-                  </Box>
-                }
-                sx={{ pb: 1 }}
-              />
-              <CardContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <MedicalServices color="primary" sx={{ mr: 1 }} />
-                      <Typography variant="body1">
-                        Medicine Cost
-                      </Typography>
-                    </Box>
-                    <Typography variant="body1" fontWeight="bold">
-                      ${calculateMedicineCost().toFixed(2)}
-                    </Typography>
-                  </Box>
-                  
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <LocalHospital color="secondary" sx={{ mr: 1 }} />
-                      <Typography variant="body1">
-                        Consultation Fees
-                      </Typography>
-                    </Box>
-                    <Typography variant="body1" fontWeight="bold">
-                      ${calculateConsultationCost().toFixed(2)}
-                    </Typography>
-                  </Box>
-                  
-                  <Divider sx={{ my: 1 }} />
-                  
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6" fontWeight="bold">
-                      Total Expenses
-                    </Typography>
-                    <Typography variant="h6" color="primary" fontWeight="bold">
-                      ${calculateTotalExpense().toFixed(2)}
-                    </Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Prescriptions */}
-          <Grid item xs={12} md={4}>
-            <Card elevation={3} sx={{ height: 'fit-content' }}>
-              <CardHeader
-                title={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <MedicalServices sx={{ mr: 1 }} />
-                    My Prescriptions
-                    <Chip 
-                      label={prescriptions.length} 
-                      size="small" 
-                      color="primary" 
-                      sx={{ ml: 2 }} 
-                    />
-                  </Box>
-                }
-                sx={{ pb: 1 }}
-              />
-              <CardContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {prescriptions.map(prescription => (
-                    <Paper key={prescription.id} variant="outlined" sx={{ p: 2 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="h6" component="div" color="primary" gutterBottom>
-                            {prescription.medicine_name}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Prescribed by: Dr. {prescription.doctor?.user?.name}
-                          </Typography>
-                          
-                          <Grid container spacing={1} sx={{ mt: 1 }}>
-                            <Grid item xs={6}>
-                              <Typography variant="body2">
-                                <strong>Dosage:</strong> {prescription.dosage}
-                              </Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="body2">
-                                <strong>Frequency:</strong> {prescription.frequency}
-                              </Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="body2">
-                                <strong>Duration:</strong> {prescription.days} days
-                              </Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="body2">
-                                <strong>Cost/Day:</strong> ${prescription.cost_per_day}
-                              </Typography>
-                            </Grid>
-                          </Grid>
-                          
-                          {prescription.instructions && (
-                            <Box sx={{ mt: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
-                              <Typography variant="body2" color="text.secondary">
-                                <strong>Instructions:</strong> {prescription.instructions}
-                              </Typography>
-                            </Box>
-                          )}
-                        </Box>
-                        <Chip 
-                          label={`$${(prescription.days * prescription.cost_per_day).toFixed(2)}`}
-                          color="success"
-                          variant="filled"
-                          size="medium"
-                          sx={{ ml: 1 }}
-                        />
-                      </Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                        Prescribed on: {new Date(prescription.created_at).toLocaleDateString()}
-                      </Typography>
-                    </Paper>
-                  ))}
-                  {prescriptions.length === 0 && (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <MedicalServices sx={{ fontSize: 48, color: 'grey.400', mb: 2 }} />
-                      <Typography color="text.secondary" variant="h6" gutterBottom>
-                        No Prescriptions Yet
-                      </Typography>
-                      <Typography color="text.secondary" variant="body2">
-                        Your prescriptions will appear here once prescribed by a doctor.
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Appointments */}
-          <Grid item xs={12} md={4}>
-            <Card elevation={3} sx={{ height: 'fit-content' }}>
-              <CardHeader
-                title={
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <CalendarToday sx={{ mr: 1 }} />
-                    My Appointments
-                    <Chip 
-                      label={appointments.length} 
-                      size="small" 
-                      color="secondary" 
-                      sx={{ ml: 2 }} 
-                    />
-                  </Box>
-                }
-                sx={{ pb: 1 }}
-              />
-              <CardContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {appointments.map(appointment => (
-                    <Paper key={appointment.id} variant="outlined" sx={{ p: 2 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="h6" component="div" color="primary" gutterBottom>
-                            Dr. {appointment.doctor?.user?.name}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
-                            {appointment.doctor?.specialization}
-                          </Typography>
-                          
-                          <Grid container spacing={1} sx={{ mt: 1 }}>
-                            <Grid item xs={6}>
-                              <Typography variant="body2">
-                                <strong>Date:</strong> {new Date(appointment.appointment_date).toLocaleDateString()}
-                              </Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="body2">
-                                <strong>Time:</strong> {appointment.appointment_time}
-                              </Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="body2">
-                                <strong>Fee:</strong> ${appointment.consultation_fee}
-                              </Typography>
-                            </Grid>
-                          </Grid>
-                          
-                          {appointment.symptoms && (
-                            <Box sx={{ mt: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
-                              <Typography variant="body2" color="text.secondary">
-                                <strong>Symptoms:</strong> {appointment.symptoms}
-                              </Typography>
-                            </Box>
-                          )}
-                        </Box>
-                        <Box sx={{ ml: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                          <Chip 
-                            icon={getAppointmentStatusIcon(appointment.status)}
-                            label={appointment.status}
-                            color={getAppointmentStatusColor(appointment.status)}
-                            size="small"
-                            sx={{ mb: 1 }}
-                          />
-                        </Box>
-                      </Box>
-                    </Paper>
-                  ))}
-                  {appointments.length === 0 && (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <CalendarToday sx={{ fontSize: 48, color: 'grey.400', mb: 2 }} />
-                      <Typography color="text.secondary" variant="h6" gutterBottom>
-                        No Appointments Yet
-                      </Typography>
-                      <Typography color="text.secondary" variant="body2">
-                        Schedule your first appointment to get started.
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </Container>
-
-      {/* Book Appointment Dialog */}
-      <Dialog 
-        open={openAppointmentDialog} 
-        onClose={() => setOpenAppointmentDialog(false)}
-        maxWidth="sm"
-        fullWidth
+      {/* Main Content */}
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          width: { sm: `calc(100% - ${open ? drawerWidth : 0}px)` },
+          ml: open ? 0 : `-${drawerWidth}px`,
+          transition: (theme) =>
+            theme.transitions.create(['margin', 'width'], {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.leavingScreen
+            }),
+          bgcolor: '#f8f9fc',
+          minHeight: '100vh'
+        }}
       >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <EventAvailable sx={{ mr: 1 }} />
-            Book New Appointment
-          </Box>
-        </DialogTitle>
-        <form onSubmit={scheduleAppointment}>
-          <DialogContent>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
-              <FormControl fullWidth required>
-                <InputLabel>Select Doctor</InputLabel>
-                <Select
-                  value={newAppointment.doctor_id}
-                  label="Select Doctor"
-                  onChange={(e) => setNewAppointment({...newAppointment, doctor_id: e.target.value})}
-                >
-                  {doctors.map(doctor => (
-                    <MenuItem key={doctor.id} value={doctor.id}>
-                      Dr. {doctor.user?.name} - {doctor.specialization} (${doctor.consultation_fee})
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <TextField
-                label="Appointment Date"
-                type="date"
-                value={newAppointment.appointment_date}
-                onChange={(e) => setNewAppointment({...newAppointment, appointment_date: e.target.value})}
-                InputLabelProps={{ shrink: true }}
-                required
-                fullWidth
-              />
-
-              <TextField
-                label="Appointment Time"
-                type="time"
-                value={newAppointment.appointment_time}
-                onChange={(e) => setNewAppointment({...newAppointment, appointment_time: e.target.value})}
-                InputLabelProps={{ shrink: true }}
-                required
-                fullWidth
-              />
-
-              <TextField
-                label="Symptoms (Optional)"
-                value={newAppointment.symptoms}
-                onChange={(e) => setNewAppointment({...newAppointment, symptoms: e.target.value})}
-                multiline
-                rows={3}
-                fullWidth
-                placeholder="Describe your symptoms, concerns, or reason for visit..."
-              />
-            </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpenAppointmentDialog(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" startIcon={<EventAvailable />}>
-              Book Appointment
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
-      {/* Snackbar */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-      >
-        <Alert 
-          severity={snackbar.severity} 
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+        <Toolbar />
+        <Routes>
+          <Route path="/" element={<DashboardHome patientInfo={patientInfo} />} />
+          <Route path="/expenses" element={<ExpensesPage patientInfo={patientInfo} />} />
+          <Route path="/reports" element={<ReportsPage patientInfo={patientInfo} />} />
+        </Routes>
+      </Box>
     </Box>
   );
 }

@@ -8,7 +8,11 @@ import {
   Chip,
   Paper,
   Avatar,
-  Stack
+  Stack,
+  AppBar,
+  Toolbar,
+  IconButton,
+  useTheme,
 } from '@mui/material';
 import {
   People as UsersIcon,
@@ -17,7 +21,7 @@ import {
   CalendarToday as CalendarIcon,
   AttachMoney as DollarIcon,
   Settings as SettingsIcon,
-  Favorite as HeartIcon
+  Favorite as HeartIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
@@ -70,11 +74,111 @@ const features = [
   },
 ];
 
+function Header({ onLoginClick, onRegisterClick }) {
+  const theme = useTheme();
+
+  return (
+    <AppBar
+      position="sticky"
+      elevation={2}
+      sx={{
+        backgroundColor: 'white',
+        color: 'text.primary',
+        borderBottom: '1px solid rgba(0,0,0,0.04)',
+      }}
+    >
+      <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', px: { xs: 2, md: 6 } }}>
+        {/* Brand */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+          <Avatar
+            sx={{
+              bgcolor: 'transparent',
+              width: 44,
+              height: 44,
+              border: `2px solid ${COLORS.blue.border}`,
+              boxShadow: 'none',
+            }}
+          >
+            <HeartIcon sx={{ fontSize: 22, color: COLORS.blue.main }} />
+          </Avatar>
+
+          <Box>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 800, letterSpacing: -0.5, lineHeight: 1 }}
+            >
+              MediVault
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+              Secure health records
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Nav (keeps compact on small screens) */}
+        <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 4, alignItems: 'center' }}>
+          <Button disableRipple sx={{ textTransform: 'none', color: 'text.primary', fontWeight: 600 }}>
+            Home
+          </Button>
+          <Button disableRipple sx={{ textTransform: 'none', color: 'text.primary', fontWeight: 600 }}>
+            Features
+          </Button>
+          <Button disableRipple sx={{ textTransform: 'none', color: 'text.primary', fontWeight: 600 }}>
+            Pricing
+          </Button>
+          <Button disableRipple sx={{ textTransform: 'none', color: 'text.primary', fontWeight: 600 }}>
+            Docs
+          </Button>
+        </Box>
+
+        {/* Actions */}
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={onLoginClick}
+            sx={{
+              borderColor: 'rgba(0,0,0,0.08)',
+              color: 'text.primary',
+              textTransform: 'none',
+              fontWeight: 600,
+              px: 2.5,
+              py: 0.8,
+            }}
+          >
+            Sign In
+          </Button>
+
+          <Button
+            variant="contained"
+            size="small"
+            onClick={onRegisterClick}
+            sx={{
+              backgroundColor: COLORS.blue.main,
+              color: 'white',
+              textTransform: 'none',
+              fontWeight: 700,
+              px: 2.5,
+              py: 0.8,
+              '&:hover': { backgroundColor: '#1e40af' },
+            }}
+          >
+            Get Started
+          </Button>
+        </Box>
+      </Toolbar>
+    </AppBar>
+  );
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
 
   return (
     <Box sx={{ bgcolor: 'white', minHeight: '100vh' }}>
+      {/* Header */}
+      <Header onLoginClick={() => navigate('/login')} onRegisterClick={() => navigate('/register')} />
+
       {/* HERO */}
       <Box
         sx={{
@@ -91,7 +195,7 @@ export default function LandingPage() {
                 bgcolor: 'rgba(255,255,255,0.12)',
                 width: 80,
                 height: 80,
-                boxShadow: '0 6px 18px rgba(0,0,0,0.08)'
+                boxShadow: '0 6px 18px rgba(0,0,0,0.08)',
               }}
             >
               <HeartIcon sx={{ fontSize: 44, color: 'white' }} />
@@ -179,14 +283,14 @@ export default function LandingPage() {
           {/* CSS Grid wrapper */}
           <Box
             sx={{
-              maxWidth: 1100, // center and control width like screenshot
+              maxWidth: 1100,
               mx: 'auto',
               display: 'grid',
               gap: { xs: 3, md: 4 },
               gridTemplateColumns: {
                 xs: '1fr',
                 sm: 'repeat(2, minmax(0, 1fr))',
-                md: 'repeat(3, minmax(0, 1fr))'
+                md: 'repeat(3, minmax(0, 1fr))',
               },
               alignItems: 'stretch',
             }}
@@ -210,7 +314,7 @@ export default function LandingPage() {
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'flex-start',
-                    minHeight: 200, // ensures equal-ish height
+                    minHeight: 200,
                   }}
                 >
                   <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
