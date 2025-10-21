@@ -22,14 +22,22 @@ import {
   MenuItem,
   Chip,
   Alert,
-  Snackbar
+  Snackbar,
+  Avatar,
+  Divider,
+  Paper,
+  Stack
 } from '@mui/material';
 import {
   Logout,
   Add,
   Delete,
   Person,
-  MedicalServices
+  MedicalServices,
+  Dashboard,
+  LocalHospital,
+  Edit,
+  Visibility
 } from '@mui/icons-material';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -37,6 +45,7 @@ import { useAuth } from '../context/AuthContext';
 function AdminDashboard() {
   const [doctors, setDoctors] = useState([]);
   const [patients, setPatients] = useState([]);
+  const [statistics, setStatistics] = useState({ totalDoctors: 0, totalPatients: 0, totalAppointments: 0 });
   const [openAddForm, setOpenAddForm] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [newUser, setNewUser] = useState({
@@ -44,8 +53,13 @@ function AdminDashboard() {
     password: '',
     role: 'doctor',
     name: '',
+    email: '',
+    phone: '',
     age: '',
-    gender: ''
+    gender: '',
+    specialization: '',
+    medical_license_number: '',
+    consultation_fee: '150'
   });
 
   const { logout, user } = useAuth();
@@ -53,13 +67,16 @@ function AdminDashboard() {
   useEffect(() => {
     fetchDoctors();
     fetchPatients();
+    fetchStatistics();
   }, []);
 
   const fetchDoctors = async () => {
     const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('role', 'doctor');
+      .from('doctors')
+      .select(`
+        *,
+        user:users(id, username, name, email, phone, created_at)
+      `);
     if (!error) setDoctors(data || []);
   };
 
@@ -68,9 +85,22 @@ function AdminDashboard() {
       .from('patients')
       .select(`
         *,
-        doctor:users(name)
+        user:users(id, username, name, email, phone, created_at),
+        doctor:doctors(id, user:users(name))
       `);
     if (!error) setPatients(data || []);
+  };
+
+  const fetchStatistics = async () => {
+    const { data: doctorsData } = await supabase.from('doctors').select('id', { count: 'exact' });
+    const { data: patientsData } = await supabase.from('patients').select('id', { count: 'exact' });
+    const { data: appointmentsData } = await supabase.from('appointments').select('id', { count: 'exact' });
+    
+    setStatistics({
+      totalDoctors: doctorsData?.length || 0,
+      totalPatients: patientsData?.length || 0,
+      totalAppointments: appointmentsData?.length || 0
+    });
   };
 
   const showSnackbar = (message, severity = 'success') => {
@@ -87,70 +117,120 @@ function AdminDashboard() {
           username: newUser.username,
           password: newUser.password,
           role: newUser.role,
-          name: newUser.name
+          name: newUser.name,
+          email: newUser.email,
+          phone: newUser.phone
         }])
         .select()
         .single();
 
       if (userError) throw userError;
 
-      // If patient, also insert into patients table
+      // If doctor, insert into doctors table
+      if (newUser.role === 'doctor') {
+        const { error: doctorError } = await supabase
+          .from('doctors')
+          .insert([{
+            user_id: userData.id,
+            specialization: newUser.specialization,
+            medical_license_number: newUser.medical_license_number,
+            consultation_fee: parseFloat(newUser.consultation_fee) || 150.00
+          }]);
+
+        if (doctorError) throw doctorError;
+      }
+
+      // If patient, insert into patients table
       if (newUser.role === 'patient') {
         const { error: patientError } = await supabase
           .from('patients')
           .insert([{
-            name: newUser.name,
+            user_id: userData.id,
             age: parseInt(newUser.age) || null,
             gender: newUser.gender,
-            doctor_id: doctors[0]?.id // Assign to first doctor by default
+            date_of_birth: null,
+            blood_group: null,
+            assigned_doctor_id: null
           }]);
 
         if (patientError) throw patientError;
       }
 
       setOpenAddForm(false);
-      setNewUser({ username: '', password: '', role: 'doctor', name: '', age: '', gender: '' });
+      setNewUser({ 
+        username: '', 
+        password: '', 
+        role: 'doctor', 
+        name: '', 
+        email: '', 
+        phone: '', 
+        age: '', 
+        gender: '',
+        specialization: '',
+        medical_license_number: '',
+        consultation_fee: '150'
+      });
       fetchDoctors();
       fetchPatients();
-      showSnackbar('User added successfully!');
+      fetchStatistics();
+      showSnackbar(`${newUser.role === 'doctor' ? 'Doctor' : 'Patient'} added successfully!`);
     } catch (error) {
       showSnackbar('Error adding user: ' + error.message, 'error');
     }
   };
 
-  const deleteUser = async (id, role, name) => {
-    if (window.confirm(`Are you sure you want to remove ${name}?`)) {
+  const deleteDoctor = async (doctorId, userId, name) => {
+    if (window.confirm(`Are you sure you want to remove Dr. ${name}? This will also delete their user account.`)) {
       try {
-        const { error } = await supabase.from('users').delete().eq('id', id);
+        // Delete user (will cascade delete doctor due to foreign key)
+        const { error } = await supabase.from('users').delete().eq('id', userId);
         if (error) throw error;
 
-        if (role === 'doctor' || role === 'patient') {
-          fetchDoctors();
-          fetchPatients();
-        }
-        showSnackbar('User removed successfully!');
+        fetchDoctors();
+        fetchStatistics();
+        showSnackbar('Doctor removed successfully!');
       } catch (error) {
-        showSnackbar('Error removing user: ' + error.message, 'error');
+        showSnackbar('Error removing doctor: ' + error.message, 'error');
+      }
+    }
+  };
+
+  const deletePatient = async (patientId, userId, name) => {
+    if (window.confirm(`Are you sure you want to remove patient ${name}? This will also delete their user account and all related records.`)) {
+      try {
+        // Delete user (will cascade delete patient due to foreign key)
+        const { error } = await supabase.from('users').delete().eq('id', userId);
+        if (error) throw error;
+
+        fetchPatients();
+        fetchStatistics();
+        showSnackbar('Patient removed successfully!');
+      } catch (error) {
+        showSnackbar('Error removing patient: ' + error.message, 'error');
       }
     }
   };
 
   return (
-    <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'grey.50' }}>
+    <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: '#f5f7fa' }}>
       {/* Header */}
-      <AppBar position="static" elevation={2}>
+      <AppBar position="static" elevation={0} sx={{ background: 'linear-gradient(135deg, #1e5dbc 0%, #2196f3 100%)' }}>
         <Toolbar>
-          <MedicalServices sx={{ mr: 2 }} />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          <Dashboard sx={{ mr: 2 }} />
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700 }}>
             Admin Dashboard
           </Typography>
-          <Typography variant="body2" sx={{ mr: 2, opacity: 0.8 }}>
+          <Typography variant="body2" sx={{ mr: 2, opacity: 0.9 }}>
             Welcome, {user?.name}
           </Typography>
           <Button 
             color="inherit" 
             onClick={logout}
             startIcon={<Logout />}
+            sx={{ 
+              borderRadius: 2,
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' }
+            }}
           >
             Logout
           </Button>
@@ -158,20 +238,64 @@ function AdminDashboard() {
       </AppBar>
 
       <Container maxWidth="xl" sx={{ py: 4 }}>
+        {/* Statistics Cards */}
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid item xs={12} md={4}>
+            <Paper elevation={2} sx={{ p: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', borderRadius: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="h3" fontWeight="bold">{statistics.totalDoctors}</Typography>
+                  <Typography variant="body1" sx={{ opacity: 0.9 }}>Total Doctors</Typography>
+                </Box>
+                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', width: 56, height: 56 }}>
+                  <LocalHospital sx={{ fontSize: 32 }} />
+                </Avatar>
+              </Box>
+            </Paper>
+          </Grid>
+          
+          <Grid item xs={12} md={4}>
+            <Paper elevation={2} sx={{ p: 3, background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', color: 'white', borderRadius: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="h3" fontWeight="bold">{statistics.totalPatients}</Typography>
+                  <Typography variant="body1" sx={{ opacity: 0.9 }}>Total Patients</Typography>
+                </Box>
+                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', width: 56, height: 56 }}>
+                  <Person sx={{ fontSize: 32 }} />
+                </Avatar>
+              </Box>
+            </Paper>
+          </Grid>
+          
+          <Grid item xs={12} md={4}>
+            <Paper elevation={2} sx={{ p: 3, background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: 'white', borderRadius: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="h3" fontWeight="bold">{statistics.totalAppointments}</Typography>
+                  <Typography variant="body1" sx={{ opacity: 0.9 }}>Total Appointments</Typography>
+                </Box>
+                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', width: 56, height: 56 }}>
+                  <MedicalServices sx={{ fontSize: 32 }} />
+                </Avatar>
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+
         <Grid container spacing={3}>
           {/* Doctors Panel */}
-          <Grid item xs={12} md={6}>
-            <Card elevation={3}>
+          <Grid item xs={12} lg={6}>
+            <Card elevation={3} sx={{ borderRadius: 3 }}>
               <CardHeader
                 title={
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Person sx={{ mr: 1 }} />
-                    Doctors
+                    <LocalHospital sx={{ mr: 1, color: '#2196f3' }} />
+                    <Typography variant="h6" fontWeight="600">Doctors</Typography>
                     <Chip 
                       label={doctors.length} 
                       size="small" 
-                      color="primary" 
-                      sx={{ ml: 2 }} 
+                      sx={{ ml: 2, bgcolor: '#e3f2fd', color: '#1976d2', fontWeight: 600 }} 
                     />
                   </Box>
                 }
@@ -179,32 +303,58 @@ function AdminDashboard() {
                   <Button
                     variant="contained"
                     startIcon={<Add />}
-                    onClick={() => setOpenAddForm(true)}
+                    onClick={() => {
+                      setNewUser({...newUser, role: 'doctor'});
+                      setOpenAddForm(true);
+                    }}
+                    sx={{ background: 'linear-gradient(135deg, #1e5dbc 0%, #2196f3 100%)' }}
                   >
-                    Add User
+                    Add Doctor
                   </Button>
                 }
+                sx={{ borderBottom: '1px solid #e0e0e0' }}
               />
-              <CardContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <CardContent sx={{ maxHeight: 600, overflowY: 'auto' }}>
+                <Stack spacing={2}>
                   {doctors.map(doctor => (
-                    <Card key={doctor.id} variant="outlined">
-                      <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Box>
-                            <Typography variant="h6" component="div">
-                              {doctor.name}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Username: {doctor.username}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Joined: {new Date(doctor.created_at).toLocaleDateString()}
-                            </Typography>
+                    <Card key={doctor.id} variant="outlined" sx={{ borderRadius: 2, '&:hover': { boxShadow: 3 } }}>
+                      <CardContent>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box sx={{ display: 'flex', gap: 2 }}>
+                            <Avatar sx={{ bgcolor: '#2196f3', width: 50, height: 50 }}>
+                              {doctor.user?.name?.charAt(0)}
+                            </Avatar>
+                            <Box>
+                              <Typography variant="h6" fontWeight="600">
+                                Dr. {doctor.user?.name}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                {doctor.specialization || 'General Physician'}
+                              </Typography>
+                              <Divider sx={{ my: 1 }} />
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>License:</strong> {doctor.medical_license_number || 'N/A'}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Fee:</strong> ${doctor.consultation_fee || '150.00'}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Email:</strong> {doctor.user?.email || 'N/A'}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Phone:</strong> {doctor.user?.phone || 'N/A'}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Username:</strong> {doctor.user?.username}
+                              </Typography>
+                              <Typography variant="caption" color="success.main">
+                                Joined: {new Date(doctor.user?.created_at).toLocaleDateString()}
+                              </Typography>
+                            </Box>
                           </Box>
                           <IconButton
                             color="error"
-                            onClick={() => deleteUser(doctor.id, 'doctor', doctor.name)}
+                            onClick={() => deleteDoctor(doctor.id, doctor.user?.id, doctor.user?.name)}
                             size="small"
                           >
                             <Delete />
@@ -214,58 +364,102 @@ function AdminDashboard() {
                     </Card>
                   ))}
                   {doctors.length === 0 && (
-                    <Typography color="text.secondary" textAlign="center" py={3}>
-                      No doctors found
-                    </Typography>
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <LocalHospital sx={{ fontSize: 60, color: '#e0e0e0', mb: 2 }} />
+                      <Typography color="text.secondary">No doctors found</Typography>
+                    </Box>
                   )}
-                </Box>
+                </Stack>
               </CardContent>
             </Card>
           </Grid>
 
           {/* Patients Panel */}
-          <Grid item xs={12} md={6}>
-            <Card elevation={3}>
+          <Grid item xs={12} lg={6}>
+            <Card elevation={3} sx={{ borderRadius: 3 }}>
               <CardHeader
                 title={
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <MedicalServices sx={{ mr: 1 }} />
-                    Patients
+                    <Person sx={{ mr: 1, color: '#e91e63' }} />
+                    <Typography variant="h6" fontWeight="600">Patients</Typography>
                     <Chip 
                       label={patients.length} 
                       size="small" 
-                      color="secondary" 
-                      sx={{ ml: 2 }} 
+                      sx={{ ml: 2, bgcolor: '#fce4ec', color: '#c2185b', fontWeight: 600 }} 
                     />
                   </Box>
                 }
+                action={
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={() => {
+                      setNewUser({...newUser, role: 'patient'});
+                      setOpenAddForm(true);
+                    }}
+                    sx={{ background: 'linear-gradient(135deg, #e91e63 0%, #f06292 100%)' }}
+                  >
+                    Add Patient
+                  </Button>
+                }
+                sx={{ borderBottom: '1px solid #e0e0e0' }}
               />
-              <CardContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <CardContent sx={{ maxHeight: 600, overflowY: 'auto' }}>
+                <Stack spacing={2}>
                   {patients.map(patient => (
-                    <Card key={patient.id} variant="outlined">
-                      <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-                        <Typography variant="h6" component="div">
-                          {patient.name}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Age: {patient.age || 'N/A'} | Gender: {patient.gender || 'N/A'}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Doctor: {patient.doctor?.name || 'Not assigned'}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Record Created: {new Date(patient.created_at).toLocaleDateString()}
-                        </Typography>
+                    <Card key={patient.id} variant="outlined" sx={{ borderRadius: 2, '&:hover': { boxShadow: 3 } }}>
+                      <CardContent>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box sx={{ display: 'flex', gap: 2 }}>
+                            <Avatar sx={{ bgcolor: '#e91e63', width: 50, height: 50 }}>
+                              {patient.user?.name?.charAt(0)}
+                            </Avatar>
+                            <Box>
+                              <Typography variant="h6" fontWeight="600">
+                                {patient.user?.name}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                {patient.age || 'N/A'} years • {patient.gender || 'N/A'}
+                              </Typography>
+                              <Divider sx={{ my: 1 }} />
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Blood Group:</strong> {patient.blood_group || 'N/A'}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Doctor:</strong> {patient.doctor?.user?.name || 'Not assigned'}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Email:</strong> {patient.user?.email || 'N/A'}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Phone:</strong> {patient.user?.phone || 'N/A'}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                <strong>Username:</strong> {patient.user?.username}
+                              </Typography>
+                              <Typography variant="caption" color="success.main">
+                                Registered: {new Date(patient.user?.created_at).toLocaleDateString()}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <IconButton
+                            color="error"
+                            onClick={() => deletePatient(patient.id, patient.user?.id, patient.user?.name)}
+                            size="small"
+                          >
+                            <Delete />
+                          </IconButton>
+                        </Box>
                       </CardContent>
                     </Card>
                   ))}
                   {patients.length === 0 && (
-                    <Typography color="text.secondary" textAlign="center" py={3}>
-                      No patients found
-                    </Typography>
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Person sx={{ fontSize: 60, color: '#e0e0e0', mb: 2 }} />
+                      <Typography color="text.secondary">No patients found</Typography>
+                    </Box>
                   )}
-                </Box>
+                </Stack>
               </CardContent>
             </Card>
           </Grid>
@@ -279,10 +473,12 @@ function AdminDashboard() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Add New User</DialogTitle>
+        <DialogTitle sx={{ background: 'linear-gradient(135deg, #1e5dbc 0%, #2196f3 100%)', color: 'white' }}>
+          Add New {newUser.role === 'doctor' ? 'Doctor' : 'Patient'}
+        </DialogTitle>
         <form onSubmit={addUser}>
           <DialogContent>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
               <FormControl fullWidth>
                 <InputLabel>Role</InputLabel>
                 <Select
@@ -320,6 +516,51 @@ function AdminDashboard() {
                 fullWidth
               />
 
+              <TextField
+                label="Email"
+                type="email"
+                value={newUser.email}
+                onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                fullWidth
+              />
+
+              <TextField
+                label="Phone"
+                value={newUser.phone}
+                onChange={(e) => setNewUser({...newUser, phone: e.target.value})}
+                fullWidth
+              />
+
+              {newUser.role === 'doctor' && (
+                <>
+                  <TextField
+                    label="Specialization"
+                    value={newUser.specialization}
+                    onChange={(e) => setNewUser({...newUser, specialization: e.target.value})}
+                    placeholder="e.g., Cardiology, Pediatrics"
+                    required
+                    fullWidth
+                  />
+
+                  <TextField
+                    label="Medical License Number"
+                    value={newUser.medical_license_number}
+                    onChange={(e) => setNewUser({...newUser, medical_license_number: e.target.value})}
+                    required
+                    fullWidth
+                  />
+
+                  <TextField
+                    label="Consultation Fee ($)"
+                    type="number"
+                    value={newUser.consultation_fee}
+                    onChange={(e) => setNewUser({...newUser, consultation_fee: e.target.value})}
+                    inputProps={{ min: 0, step: 0.01 }}
+                    fullWidth
+                  />
+                </>
+              )}
+
               {newUser.role === 'patient' && (
                 <>
                   <TextField
@@ -327,6 +568,7 @@ function AdminDashboard() {
                     type="number"
                     value={newUser.age}
                     onChange={(e) => setNewUser({...newUser, age: e.target.value})}
+                    inputProps={{ min: 0, max: 150 }}
                     fullWidth
                   />
 
@@ -346,12 +588,16 @@ function AdminDashboard() {
               )}
             </Box>
           </DialogContent>
-          <DialogActions>
+          <DialogActions sx={{ px: 3, pb: 3 }}>
             <Button onClick={() => setOpenAddForm(false)}>
               Cancel
             </Button>
-            <Button type="submit" variant="contained">
-              Add User
+            <Button 
+              type="submit" 
+              variant="contained"
+              sx={{ background: 'linear-gradient(135deg, #1e5dbc 0%, #2196f3 100%)' }}
+            >
+              Add {newUser.role === 'doctor' ? 'Doctor' : 'Patient'}
             </Button>
           </DialogActions>
         </form>
@@ -362,10 +608,12 @@ function AdminDashboard() {
         open={snackbar.open}
         autoHideDuration={6000}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert 
           severity={snackbar.severity} 
           onClose={() => setSnackbar({ ...snackbar, open: false })}
+          variant="filled"
         >
           {snackbar.message}
         </Alert>
